@@ -132,3 +132,73 @@ def export_measurements_widget(
     )
     save_measurements(table, output_path)
     show_info(f"Saved measurements for {len(table)} organoids to:\n{output_path}")
+    
+    
+@magic_factory(
+    call_button="Save annotation project",
+    output_path={
+        "label": "Project file",
+        "mode": "w",
+        "filter": "Annotation project (*.npz)",
+    },
+)
+def save_annotation_project_widget(
+    mosaic: Image,
+    annotation: Labels,
+    output_path: Path = Path("organoid_annotations.npz"),
+) -> None:
+    """Save the mosaic and edited annotations together."""
+
+    mosaic_data = np.asarray(mosaic.data)
+    annotation_data = np.asarray(annotation.data)
+
+    if mosaic_data.shape[:2] != annotation_data.shape:
+        raise ValueError(
+            "Mosaic and annotation dimensions do not match."
+        )
+
+    output_path = Path(output_path).with_suffix(".npz")
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    np.savez_compressed(
+        output_path,
+        mosaic=mosaic_data,
+        annotations=annotation_data.astype(np.uint8),
+    )
+
+    show_info(
+        f"Annotation project saved to:\n{output_path}"
+    )
+    
+    
+@magic_factory(
+    call_button="Load annotation project",
+    input_path={
+        "label": "Project file",
+        "mode": "r",
+        "filter": "Annotation project (*.npz)",
+    },
+)
+def load_annotation_project_widget(
+    input_path: Path = Path("organoid_annotations.npz"),
+) -> list[LayerDataTuple]:
+    """Load a saved mosaic and annotation layer."""
+
+    input_path = Path(input_path)
+
+    if not input_path.is_file():
+        raise FileNotFoundError(
+            f"Project not found: {input_path}"
+        )
+
+    with np.load(input_path) as project:
+        mosaic = project["mosaic"]
+        annotations = project["annotations"]
+
+    return [
+        (mosaic, {"name": "organoid_mosaic", "rgb": True}, "image"),
+        (annotations.astype(np.uint8), {"name": "organoid_annotations", "opacity": 0.45}, "labels"),
+    ]
