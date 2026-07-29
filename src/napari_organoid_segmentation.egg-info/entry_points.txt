@@ -1,0 +1,2 @@
+[napari.manifest]
+napari-organoid-segmentation = napari_organoid_segmentation:napari.yaml

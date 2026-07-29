@@ -1,0 +1,40 @@
+name: napari-organoid-segmentation
+display_name: Organoid Segmentation
+
+contributions:
+  commands:
+    - id: napari-organoid-segmentation.mosaic_widget
+      title: Create Organoid Mosaic
+      python_name: napari_organoid_segmentation.widget:organoid_mosaic_widget
+
+    - id: napari-organoid-segmentation.train_convpaint
+      title: Train and Save ConvPaint Model
+      python_name: napari_organoid_segmentation.widget:train_convpaint_widget
+
+    - id: napari-organoid-segmentation.load_convpaint
+      title: Load ConvPaint Model
+      python_name: napari_organoid_segmentation.widget:load_convpaint_widget
+
+    - id: napari-organoid-segmentation.analysis_widget
+      title: Segment with ConvPaint
+      python_name: napari_organoid_segmentation.widget:organoid_analysis_widget
+
+    - id: napari-organoid-segmentation.export_measurements
+      title: Export organoid measurements
+      python_name: napari_organoid_segmentation.widget:export_measurements_widget
+
+  widgets:
+    - command: napari-organoid-segmentation.mosaic_widget
+      display_name: Create Organoid Mosaic
+
+    - command: napari-organoid-segmentation.train_convpaint
+      display_name: Train and Save ConvPaint Model
+
+    - command: napari-organoid-segmentation.load_convpaint
+      display_name: Load ConvPaint Model
+
+    - command: napari-organoid-segmentation.analysis_widget
+      display_name: Segment with ConvPaint
+
+    - command: napari-organoid-segmentation.export_measurements
+      display_name: Export Organoid Measurements

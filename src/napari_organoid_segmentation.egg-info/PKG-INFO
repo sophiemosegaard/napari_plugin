@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: napari-organoid-segmentation
+Version: 0.0.2
+Summary: Simple napari tools for organoid mosaics, training of convpaint model, segmentation of organoids, and measurements.
+Classifier: Framework :: napari
+Requires-Dist: napari
+Requires-Dist: numpy
+Requires-Dist: scikit-image
+Requires-Dist: magicgui
+Requires-Dist: pandas
+Provides-Extra: convpaint
+Requires-Dist: napari-convpaint; extra == "convpaint"
