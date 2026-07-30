@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from .preprocessing import as_grayscale
 from skimage.util import img_as_float32
 
 
@@ -81,7 +80,7 @@ def train_and_save_convpaint(
 
     model.set_params(
         channel_mode="rgb",
-        normalize = 3,
+        normalize=3,
     )
 
     model.train(

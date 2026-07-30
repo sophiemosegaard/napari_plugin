@@ -1,4 +1,4 @@
-# STEP 1: random organoid mosaic
+# Organoid Segmentation Workflow
 
 Install the plugin from this folder:
 
@@ -19,9 +19,22 @@ FIXME: I want to make the plugin very easy with as less parameters as possible a
 - lower `hough_score` if too few circles are detected
 - increase `random_seed` to create a different random mosaic
 
-The widget creates:
+The workflow is split into three steps:
+
+1. Create a mosaic from an image folder and optionally save the edited annotation as an `*.npz` project.
+2. Train a ConvPaint model from the mosaic image and its annotation, then save the model to a folder you choose.
+3. Load a saved model and run segmentation plus measurements on an image folder, saving the measurement CSV and the object masks to locations you choose.
+
+The first widget creates:
 
 1. `organoid_mosaic`: the image mosaic
-2. `organoid_circle_labels`: editable labels, with 0 as background and one label for the organoids to segment
+2. `organoid_annotations`: editable labels, with 0 as background and one label for the organoids to segment
 
 Use napari's Labels paint/area tools to correct the borders and to draw specific organoid borders.
+
+Suggested starting values:
+
+- `rows = 4`, `columns = 4` while testing
+- `min_radius_px` and `max_radius_px` around the expected well radius
+- lower the circle detection threshold if too few circles are detected
+- increase the number of selected tiles if you want a larger mosaic

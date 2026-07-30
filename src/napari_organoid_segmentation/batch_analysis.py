@@ -8,28 +8,38 @@ from skimage.measure import label
 from .export import save_measurements
 from .measurements import measure_organoids
 from .preprocessing import as_grayscale
-from .segmentation_convpaint import segment_convpaint
+from .segmentation_convpaint import load_convpaint_model, segment_convpaint
 
 
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 
 
 def analyze_image_folder(
+    model_path: Path,
     image_folder: Path,
-    output_csv: Path,
+    output_folder: Path,
+    output_filename: str = "organoid_measurements.csv",
 ) -> tuple[int, int, Path]:
-    """Segment all images and save one measurement table."""
+    """Load a ConvPaint model, segment all images, and save one measurement table."""
+
+    load_convpaint_model(model_path)
 
     image_folder = Path(image_folder)
-    output_csv = Path(output_csv).with_suffix(".csv")
+    output_folder = Path(output_folder)
+    output_folder.mkdir(parents=True, exist_ok=True)
+    output_csv = output_folder / Path(output_filename).name
+
+    if output_csv.suffix.lower() != ".csv":
+        output_csv = output_csv.with_suffix(".csv")
+
+    mask_folder = output_csv.parent / f"{output_csv.stem}_segmentations"
 
     if not image_folder.is_dir():
         raise ValueError(
             f"Not a valid image folder: {image_folder}"
         )
 
-    # Segmentations are saved automatically beside the CSV.
-    mask_folder = (output_csv.parent / f"{output_csv.stem}_segmentations")
+    mask_folder.mkdir(parents=True, exist_ok=True)
 
     image_paths = sorted(
         path

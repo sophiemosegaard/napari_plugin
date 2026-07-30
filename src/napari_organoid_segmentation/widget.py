@@ -6,12 +6,9 @@ from napari.layers import Image, Labels
 from napari.types import LayerDataTuple
 from napari.utils.notifications import show_info
 
-from .preprocessing import as_grayscale
-from .segmentation_convpaint import (load_convpaint_model, segment_convpaint, train_and_save_convpaint)
-from .export import save_measurements
-from .measurements import measure_organoids
-from .mosaic import create_organoid_mosaic
 from .batch_analysis import analyze_image_folder
+from .mosaic import create_organoid_mosaic
+from .segmentation_convpaint import train_and_save_convpaint
 
 
 @magic_factory(
@@ -50,7 +47,7 @@ def organoid_mosaic_widget(
 @magic_factory(
     call_button="Train and save model",
     model_folder={"label": "Model folder", "mode": "d"},
-    )
+)
 def train_convpaint_widget(
     image: Image,
     annotation: Labels,
@@ -67,43 +64,32 @@ def train_convpaint_widget(
     show_info(
         f"ConvPaint model saved to:\n{model_path}"
     )
-    
-@magic_factory(
-    call_button="Load model",
-    model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
-    )
-def load_convpaint_widget(
-    model_path: Path = Path(
-        "organoid_convpaint.pkl"
-    ),
-) -> None:
-    loaded_path = load_convpaint_model(
-        model_path
-    )
 
-    show_info(
-        f"Loaded ConvPaint model:\n{loaded_path}"
-    )
-    
-    
 @magic_factory(
     call_button="Segment folder and save measurements",
-    model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"}, # Magicgui uses mode="r" for an existing file, mode="d" for an existing directory, and mode="w" for an output filename
+    model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
     image_folder={"label": "Image folder", "mode": "d"},
-    output_csv={"label": "Measurements CSV", "mode": "w", "filter": "CSV files (*.csv)"},
+    output_folder={"label": "Measurements folder", "mode": "d"},
+    output_filename={"label": "Measurements CSV name"},
 )
 def batch_analysis_widget(
-    model_path: Path = Path("organoid_convpaint_rgb.pkl"),
+    model_path: Path = Path("organoid_convpaint.pkl"),
     image_folder: Path = Path("."),
-    output_csv: Path = Path("organoid_measurements.csv"),
+    output_folder: Path = Path("reports"),
+    output_filename: str = "organoid_measurements.csv",
 ) -> None:
-    """Segment a folder and save all measurements."""
+    """Segment a folder and save the measurements and object masks."""
 
-    load_convpaint_model(model_path)
+    number_images, number_organoids, mask_folder = analyze_image_folder(
+        model_path=model_path,
+        image_folder=image_folder,
+        output_folder=output_folder,
+        output_filename=output_filename,
+    )
 
-    number_images, number_organoids, mask_folder = (analyze_image_folder(image_folder=image_folder, output_csv=output_csv))
-
-    output_csv = Path(output_csv).with_suffix(".csv")
+    output_csv = Path(output_folder) / Path(output_filename).name
+    if output_csv.suffix.lower() != ".csv":
+        output_csv = output_csv.with_suffix(".csv")
 
     show_info(
         f"Processed {number_images} images.\n"
@@ -112,56 +98,6 @@ def batch_analysis_widget(
         f"Segmentations saved to:\n{mask_folder}"
     )
 
-
-@magic_factory(call_button="Segment organoids")
-def organoid_analysis_widget(
-    image: Image,
-) -> LayerDataTuple:
-    mask = segment_convpaint(
-        np.asarray(image.data)
-    )
-
-    return (mask, {"name": f"{image.name}_organoids"}, "labels")
-    
-@magic_factory(
-    call_button="Save measurements CSV",
-    output_path={
-        "label": "CSV output file", 
-        "mode": "w", 
-        "filter": "CSV files (*.csv)"
-    },
-    segmentation_method={"label": "Segmentation method"},
-)
-def export_measurements_widget(
-    image: Image,
-    labels: Labels,
-    output_path: Path = Path("../reports/organoid_measurements.csv"),
-    segmentation_method: Literal[
-        "Otsu + morphology", "ConvPaint",
-    ] = "Otsu + morphology",
-) -> None:
-    """Measure segmented organoids and save the results as CSV."""
-
-    # Convert RGB images to grayscale for intensity measurements.
-    grayscale = as_grayscale(np.asarray(image.data))
-    output_path = Path(output_path)
-    # Create the reports folder if it does not already exist
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Add .csv if the user did not enter an extension.
-    if output_path.suffix.lower() != ".csv":
-        output_path = output_path.with_suffix(".csv")
-
-    table = measure_organoids(
-        labels=np.asarray(labels.data),
-        intensity_image=grayscale,
-        image_name=image.name,
-        segmentation_method=segmentation_method,
-    )
-    save_measurements(table, output_path)
-    show_info(f"Saved measurements for {len(table)} organoids to:\n{output_path}")
-    
-    
 @magic_factory(
     call_button="Save annotation project",
     output_path={
