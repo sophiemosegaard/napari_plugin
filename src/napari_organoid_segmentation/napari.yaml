@@ -15,6 +15,10 @@ contributions:
       title: Load ConvPaint Model
       python_name: napari_organoid_segmentation.widget:load_convpaint_widget
 
+    - id: napari-organoid-segmentation.batch_analysis
+      title: Batch ConvPaint Analysis
+      python_name: napari_organoid_segmentation.widget:batch_analysis_widget
+
     - id: napari-organoid-segmentation.analysis_widget
       title: Segment with ConvPaint
       python_name: napari_organoid_segmentation.widget:organoid_analysis_widget
@@ -40,6 +44,9 @@ contributions:
 
     - command: napari-organoid-segmentation.load_convpaint
       display_name: Load ConvPaint Model
+
+    - command: napari-organoid-segmentation.batch_analysis
+      display_name: Batch ConvPaint Analysis
 
     - command: napari-organoid-segmentation.analysis_widget
       display_name: Segment with ConvPaint

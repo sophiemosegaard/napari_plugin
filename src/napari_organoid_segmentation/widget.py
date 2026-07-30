@@ -11,6 +11,7 @@ from .segmentation_convpaint import (load_convpaint_model, segment_convpaint, tr
 from .export import save_measurements
 from .measurements import measure_organoids
 from .mosaic import create_organoid_mosaic
+from .batch_analysis import analyze_image_folder
 
 
 @magic_factory(
@@ -82,6 +83,33 @@ def load_convpaint_widget(
 
     show_info(
         f"Loaded ConvPaint model:\n{loaded_path}"
+    )
+    
+    
+@magic_factory(
+    call_button="Segment folder and save measurements",
+    model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"}, # Magicgui uses mode="r" for an existing file, mode="d" for an existing directory, and mode="w" for an output filename
+    image_folder={"label": "Image folder", "mode": "d"},
+    output_csv={"label": "Measurements CSV", "mode": "w", "filter": "CSV files (*.csv)"},
+)
+def batch_analysis_widget(
+    model_path: Path = Path("organoid_convpaint_rgb.pkl"),
+    image_folder: Path = Path("."),
+    output_csv: Path = Path("organoid_measurements.csv"),
+) -> None:
+    """Segment a folder and save all measurements."""
+
+    load_convpaint_model(model_path)
+
+    number_images, number_organoids, mask_folder = (analyze_image_folder(image_folder=image_folder, output_csv=output_csv))
+
+    output_csv = Path(output_csv).with_suffix(".csv")
+
+    show_info(
+        f"Processed {number_images} images.\n"
+        f"Measured {number_organoids} organoids.\n"
+        f"CSV saved to:\n{output_csv}\n"
+        f"Segmentations saved to:\n{mask_folder}"
     )
 
 
