@@ -61,4 +61,4 @@ This plugin runs on Python; its student developer runs on coffee.
 
 If the plugin saves you some time and you enjoy using it, an optional coffee donation is always appreciated:
 
-<YOUR_DONATION_LINK>
+"IBAN: CH41 0079 0042 9430 0433 1\n"

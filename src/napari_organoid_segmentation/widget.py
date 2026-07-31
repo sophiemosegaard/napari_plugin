@@ -183,5 +183,5 @@ def about_plugin_widget() -> None:
         "This plugin runs on Python; "
         "its student developer runs on coffee. ☕\n\n"
         "Optional coffee support:\n"
-        "<YOUR_DONATION_LINK>"
+        "IBAN: CH41 0079 0042 9430 0433 1\n"
     )
