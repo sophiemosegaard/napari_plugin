@@ -12,6 +12,7 @@ from skimage.util import img_as_float32
 from .preprocessing import as_grayscale
 
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"} # Works for all common image formats.
+MIN_CIRCLE_INSIDE_FRACTION = 0.80
 
 
 def _read_grayscale(path: Path) -> np.ndarray:
@@ -58,6 +59,30 @@ def _detection_image(image: np.ndarray, max_size: int) -> tuple[np.ndarray, floa
 
     return small.astype(np.float32), scale
 
+def _circle_inside_fraction(
+    image_shape: tuple[int, ...],
+    y: int,
+    x: int,
+    radius: int,
+) -> float:
+    """Return the fraction of the circle inside the image."""
+
+    # Pixels of the circle that are inside the source image.
+    visible_rr, _ = disk(
+        (y, x),
+        radius,
+        shape=image_shape[:2],
+    )
+
+    # Pixels of a complete circle with the same radius.
+    full_rr, _ = disk(
+        (radius, radius),
+        radius,
+        shape=(2 * radius + 1, 2 * radius + 1),
+    )
+
+    return len(visible_rr) / len(full_rr)
+
 
 def detect_circles(
     image: np.ndarray,
@@ -67,37 +92,53 @@ def detect_circles(
     max_circles: int,
     detection_max_size: int,
 ) -> list[tuple[int, int, int, float]]:
-    """Return detected circles as (center_y, center_x, radius, score)."""
-   # Use grayscale only for Hough-circle detection.
+    """Detect circles that are at least 80% inside the image."""
+
+    # Use grayscale only for Hough detection.
     gray = as_grayscale(image)
 
     small, scale = _detection_image(gray, detection_max_size)
-
     min_radius = max(2, round(min_radius_px * scale))
     max_radius = max(min_radius, round(max_radius_px * scale))
     radius_step = max(1, round(radius_step_px * scale))
     radii = np.arange(min_radius, max_radius + 1, radius_step)
-
     edges = canny(small, sigma=2.0) # FIXME How the canny edge detection is performed can vary a lot between images. Not quite sure how to deal with this fact or if I just set one value?
     hough = hough_circle(edges, radii, normalize=True)
+
+    # Request extra candidates because border circles
+    # may be rejected by the 80% condition.
+    number_of_peaks = max(10, max_circles * 5)
+
     scores, xs, ys, found_radii = hough_circle_peaks(
         hough,
         radii,
         min_xdistance=min_radius,
         min_ydistance=min_radius,
-        total_num_peaks=max_circles,
+        total_num_peaks=number_of_peaks,
     )
 
     circles = []
-    for score, x, y, radius in zip(scores, xs, ys, found_radii):
-        circles.append(
-            (
-                round(y / scale),
-                round(x / scale),
-                round(radius / scale),
-                float(score),
-            )
-        )
+
+    for score, x, y, radius in zip(
+        scores,
+        xs,
+        ys,
+        found_radii,
+    ):
+        full_y = round(y / scale)
+        full_x = round(x / scale)
+        full_radius = round(radius / scale)
+
+        inside_fraction = _circle_inside_fraction(image.shape, full_y, full_x, full_radius)
+
+        if inside_fraction < MIN_CIRCLE_INSIDE_FRACTION:
+            continue
+
+        circles.append((full_y, full_x, full_radius, float(score)))
+
+        if len(circles) == max_circles:
+            break
+
     return circles
 
 def _crop_centered(image: np.ndarray, y: int, x: int, size: int) -> np.ndarray:
@@ -155,7 +196,7 @@ def create_organoid_mosaic(
     radius_step_px = max(1, round(radius_range / 20))
     
     # Downsampling limit used only to make detection faster.
-    detection_max_size = 700
+    detection_max_size = 1000
     
     # Use this when every image contains one microwell. 
     max_circles_per_image = 2 # FIXME not sure how I should standardize this, depends a lot on the data that the user has.....
@@ -199,7 +240,7 @@ def create_organoid_mosaic(
     selected_indices = rng.choice(len(candidates), number_needed, replace=False)
 
     mosaic = np.zeros((rows * patch_size, columns * patch_size, 3), np.float32)
-    labels = np.ones(mosaic.shape[:2], np.uint8)
+    labels = np.zeros(mosaic.shape[:2], np.uint8)
     records: list[dict] = []
 
     for tile_index, candidate_index in enumerate(selected_indices):
@@ -210,14 +251,6 @@ def create_organoid_mosaic(
         row, column = divmod(tile_index, columns)
         y0, x0 = row * patch_size, column * patch_size
         mosaic[y0 : y0 + patch_size, x0 : x0 + patch_size] = patch
-
-        circle_radius = min(radius, patch_size // 2 - 1)
-        rr, cc = disk(
-            (y0 + patch_size // 2, x0 + patch_size // 2),
-            circle_radius,
-            shape=labels.shape,
-        )
-        labels[rr, cc] = 0
 
         records.append(
             {
