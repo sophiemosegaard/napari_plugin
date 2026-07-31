@@ -14,25 +14,24 @@ from .segmentation_convpaint import train_and_save_convpaint
 @magic_factory(
     call_button="Create Organoid Mosaic",
     folder={"label": "Image folder", "mode": "d"},
-    rows={"min": 1},
-    columns={"min": 1},
+    patches_per_side={"label": "Patches per side", "min": 1},
     well_diameter_px={"label": "Well diameter (px)", "min": 4},  
 )
 def organoid_mosaic_widget(
     folder: Path,
-    rows: int = 16,
-    columns: int = 16,
+    patches_per_side: int = 4,
     well_diameter_px: int = 280,
 ) -> list[LayerDataTuple]:
     """Detect organoids, choose them randomly, and build image/label mosaics."""
     mosaic_image, mosaic_labels, detected_organoids = create_organoid_mosaic(
         folder=folder,
-        rows=rows,
-        columns=columns,
+        patches_per_side=patches_per_side,
         well_diameter_px=well_diameter_px,
     )
+    
+    total_patches = patches_per_side**2
 
-    show_info(f"Created organoid mosaic {rows} x {columns} with {len(detected_organoids)} detected organoids.")
+    show_info(f"Created organoid mosaic {patches_per_side} x {patches_per_side} with {total_patches} detected organoids.")
     metadata = {"tiles": detected_organoids}
 
     return [
@@ -67,7 +66,7 @@ def train_convpaint_widget(
     model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
     image_folder={"label": "Image folder", "mode": "d"},
     well_diameter_px={"label": "Well diameter (px)", "min": 4},
-    max_wells_per_image={"label": "Max wells per image", "min": 1},
+    include_border_wells={"label": "Include wells cut by image border",},
     output_folder={"label": "Measurements folder", "mode": "d"},
     output_filename={"label": "Measurements CSV name"},
 )
@@ -75,7 +74,7 @@ def batch_analysis_widget(
     model_path: Path = Path("organoid_convpaint.pkl"),
     image_folder: Path = Path("."),
     well_diameter_px: int = 280,
-    max_wells_per_image: int = 50,
+    include_border_wells: bool = False,
     output_folder: Path = Path("reports"),
     output_filename: str = "organoid_measurements.csv",
 ) -> None:
@@ -85,17 +84,20 @@ def batch_analysis_widget(
         model_path=model_path,
         image_folder=image_folder,
         well_diameter_px=well_diameter_px,
-        max_wells_per_image=max_wells_per_image,
         output_folder=output_folder,
         output_filename=output_filename,
+        include_border_wells=include_border_wells,
     )
 
     output_csv = Path(output_folder) / Path(output_filename).name
     if output_csv.suffix.lower() != ".csv":
         output_csv = output_csv.with_suffix(".csv")
+        
+    border_mode = ("including border wells" if include_border_wells else "complete wells only")
 
     show_info(
         f"Processed {number_images} images.\n"
+        f"({border_mode}).\n"
         f"Measured {number_organoids} organoids.\n"
         f"CSV saved to:\n{output_csv}\n"
         f"Segmentations saved to:\n{mask_folder}"

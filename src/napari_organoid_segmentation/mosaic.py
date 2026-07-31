@@ -12,8 +12,8 @@ from skimage.util import img_as_float32
 from .preprocessing import as_grayscale
 
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"} # Works for all common image formats.
-MIN_CIRCLE_INSIDE_FRACTION = 0.80
 HOUGH_RADIUS_TOLERANCE = 0.08
+MOSAIC_MIN_INSIDE_FRACTION = 0.80
 
 
 def _read_grayscale(path: Path) -> np.ndarray:
@@ -69,59 +69,75 @@ def _circle_inside_fraction(
     """Return the fraction of the circle inside the image."""
 
     # Pixels of the circle that are inside the source image.
-    visible_rr, _ = disk(
-        (y, x),
-        radius,
-        shape=image_shape[:2],
-    )
+    visible_rr, _ = disk((y, x), radius, shape=image_shape[:2])
 
     # Pixels of a complete circle with the same radius.
-    full_rr, _ = disk(
-        (radius, radius),
-        radius,
-        shape=(2 * radius + 1, 2 * radius + 1),
-    )
+    full_rr, _ = disk((radius, radius), radius, shape=(2 * radius + 1, 2 * radius + 1))
 
     return len(visible_rr) / len(full_rr)
 
+def _estimate_max_wells(
+    image_shape: tuple[int, ...],
+    well_diameter_px: int,
+) -> int:
+    """Estimate a safe maximum number of wells."""
+
+    height, width = image_shape[:2]
+
+    rows = int(np.ceil(height / well_diameter_px)) + 2
+    columns = int(np.ceil(width / well_diameter_px)) + 2
+
+    return max(1, rows * columns)
 
 def detect_circles(
     image: np.ndarray,
-    # min_radius_px: int,
-    # max_radius_px: int,
-    # radius_step_px: int,
-    # max_circles: int,
-    # detection_max_size: int,
     well_diameter_px: int,
-    max_circles: int,
     detection_max_size: int,
+    min_inside_fraction: float = 0.80,
+    detect_outside_centers: bool = False,
 ) -> list[tuple[int, int, int, float]]:
-    """Detect circles that are at least 80% inside the image."""
+    """Detect wells close to the measured well diameter."""
 
-    # Use grayscale only for Hough detection.
+    if well_diameter_px < 4:
+        raise ValueError("well_diameter_px must be at least 4 pixels.")
+
+    if not 0.0 <= min_inside_fraction <= 1.0:
+        raise ValueError("min_inside_fraction must be between 0 and 1.")
+
     gray = as_grayscale(image)
     small, scale = _detection_image(gray, detection_max_size)
-    
+
+    # Expected radius in the possibly downsampled image.
     expected_radius = max(2, round(well_diameter_px * scale / 2))
+
+    # Search a small range around the measured size.
     radius_tolerance = max(1, round(expected_radius * HOUGH_RADIUS_TOLERANCE))
-    min_radius = max(2, expected_radius - radius_tolerance)
-    max_radius = max(min_radius, expected_radius + radius_tolerance)
-    radii = np.arange(min_radius, max_radius + 1)
-    
+    minimum_radius = max(2, expected_radius - radius_tolerance)
+    maximum_radius = (expected_radius + radius_tolerance)
+    radii = np.arange(minimum_radius, maximum_radius + 1)
+
     edges = canny(small, sigma=2.0) # FIXME How the canny edge detection is performed can vary a lot between images. Not quite sure how to deal with this fact or if I just set one value?
-    hough = hough_circle(edges, radii, normalize=True)
+    hough = hough_circle(edges, radii, normalize=True, full_output=detect_outside_centers)
 
-    # Request extra candidates because border circles
-    # may be rejected by the 80% condition.
-    number_of_peaks = max(10, max_circles * 5)
+    # Calculate a safe detection limit internally.
+    max_circles = _estimate_max_wells(image_shape=image.shape, well_diameter_px=well_diameter_px)
 
-    scores, xs, ys, found_radii = hough_circle_peaks(
-        hough,
-        radii,
-        min_xdistance=expected_radius,
-        min_ydistance=expected_radius,
-        total_num_peaks=number_of_peaks,
+    # Request extra candidates because some may later
+    # be rejected by the border criterion.
+    number_of_peaks = max(10, max_circles * 3)
+
+    scores, xs, ys, found_radii = (
+        hough_circle_peaks(
+            hough,
+            radii,
+            min_xdistance=expected_radius,
+            min_ydistance=expected_radius,
+            total_num_peaks=number_of_peaks,
+        )
     )
+
+    # full_output=True adds padding around the accumulator.
+    hough_padding = (int(radii.max()) if detect_outside_centers else 0)
 
     circles = []
 
@@ -131,13 +147,18 @@ def detect_circles(
         ys,
         found_radii,
     ):
-        full_y = round(y / scale)
-        full_x = round(x / scale)
+        # Convert coordinates back from the padded,
+        # downsampled detection image.
+        small_y = int(y) - hough_padding
+        small_x = int(x) - hough_padding
+
+        full_y = round(small_y / scale)
+        full_x = round(small_x / scale)
         full_radius = round(radius / scale)
 
         inside_fraction = _circle_inside_fraction(image.shape, full_y, full_x, full_radius)
 
-        if inside_fraction < MIN_CIRCLE_INSIDE_FRACTION:
+        if inside_fraction < min_inside_fraction:
             continue
 
         circles.append((full_y, full_x, full_radius, float(score)))
@@ -182,14 +203,16 @@ def _crop_centered(image: np.ndarray, y: int, x: int, size: int) -> np.ndarray:
 
 def create_organoid_mosaic(
     folder: Path,
-    rows: int = 16,
-    columns: int = 16,
+    patches_per_side: int = 4,
     well_diameter_px: int = 280,
 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """Detect organoids, choose them randomly, and build image/label mosaics."""
     folder = Path(folder)
     if not folder.is_dir():
         raise ValueError(f"Not a valid folder: {folder}")
+    
+    if patches_per_side < 1:
+        raise ValueError("patches_per_side must be at least 1.")
     
     if well_diameter_px < 4:
         raise ValueError("well_diameter_px must be at least 4 pixels.")
@@ -199,9 +222,6 @@ def create_organoid_mosaic(
     
     # Downsampling limit used only to make detection faster.
     detection_max_size = 1000
-    
-    # Use this when every image contains one microwell. 
-    max_circles_per_image = 50
     
     files = sorted(
         path for path in folder.rglob("*")
@@ -224,8 +244,9 @@ def create_organoid_mosaic(
             circles = detect_circles(
                 image=image,
                 well_diameter_px=well_diameter_px,
-                max_circles=max_circles_per_image,
                 detection_max_size=detection_max_size,
+                min_inside_fraction=MOSAIC_MIN_INSIDE_FRACTION,
+                detect_outside_centers=False,
             )
 
             if circles:
@@ -234,7 +255,8 @@ def create_organoid_mosaic(
         except Exception as error:
             skipped.append(f"{path.name}: {error}")
     
-    number_needed = rows * columns
+    # number_needed = rows * columns
+    number_needed = patches_per_side * patches_per_side
 
     total_detected = sum(len(circles) for circles in circles_by_image.values())
 
@@ -283,7 +305,7 @@ def create_organoid_mosaic(
 
         selected_candidates.extend(remaining_choices[:number_missing])
 
-    mosaic = np.zeros((rows * patch_size, columns * patch_size, 3), np.float32)
+    mosaic = np.zeros((patches_per_side * patch_size, patches_per_side * patch_size, 3), np.float32)
     labels = np.zeros(mosaic.shape[:2], np.uint8)
     records: list[dict] = []
     
@@ -292,7 +314,7 @@ def create_organoid_mosaic(
         
         patch = _crop_centered(_read_rgb(path), y, x, patch_size)
 
-        row, column = divmod(tile_index, columns)
+        row, column = divmod(tile_index, patches_per_side)
         y0, x0 = row * patch_size, column * patch_size
         mosaic[y0 : y0 + patch_size, x0 : x0 + patch_size] = patch
 

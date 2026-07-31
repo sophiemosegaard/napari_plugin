@@ -16,6 +16,9 @@ from .mosaic import detect_circles
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 WELL_MARGIN_FRACTION = 0.05
 
+# A border well must have at least 20% of its area visible.
+MIN_BORDER_WELL_FRACTION = 0.20
+
 def keep_largest_object_per_circle(
     binary_mask: np.ndarray,
     circles: list[tuple[int, int, int, float]],
@@ -100,17 +103,16 @@ def analyze_image_folder(
     output_folder: Path,
     output_filename: str = "organoid_measurements.csv",
     well_diameter_px: int = 280,
-    max_wells_per_image: int = 50,
+    include_border_wells: bool = False,
 ) -> tuple[int, int, Path]:
     """Load a ConvPaint model, segment all images, and save one measurement table."""
     
     if well_diameter_px < 4:
         raise ValueError("well_diameter_px must be at least 4 pixels.")
 
-    if max_wells_per_image < 1:
-        raise ValueError("max_wells_per_image must be at least 1.")
-
     load_convpaint_model(model_path)
+    
+    min_inside_fraction = (MIN_BORDER_WELL_FRACTION if include_border_wells else 1.0)
 
     image_folder = Path(image_folder)
     output_folder = Path(output_folder)
@@ -148,8 +150,9 @@ def analyze_image_folder(
         circles = detect_circles(
             image=image,
             well_diameter_px=well_diameter_px,
-            max_circles=max_wells_per_image,
             detection_max_size=1000,
+            min_inside_fraction=min_inside_fraction,
+            detect_outside_centers=include_border_wells,
         )
 
         if circles:
