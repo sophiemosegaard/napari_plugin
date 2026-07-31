@@ -2,6 +2,7 @@
 name = "napari-organoid-segmentation"
 version = "0.0.2"
 description = "Simple napari tools for organoid mosaics, training of convpaint model, segmentation of organoids, and measurements."
+author = [{name = "Sophie Mosegaard", email = "sophie.mosegaard@epfl.ch"}, {name = "Daniel Sage"}] readme = "README.md"
 classifiers = [
     "Framework :: napari",
 ]

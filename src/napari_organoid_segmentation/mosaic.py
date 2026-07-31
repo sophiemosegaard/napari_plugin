@@ -13,6 +13,7 @@ from .preprocessing import as_grayscale
 
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"} # Works for all common image formats.
 MIN_CIRCLE_INSIDE_FRACTION = 0.80
+HOUGH_RADIUS_TOLERANCE = 0.08
 
 
 def _read_grayscale(path: Path) -> np.ndarray:
@@ -86,9 +87,12 @@ def _circle_inside_fraction(
 
 def detect_circles(
     image: np.ndarray,
-    min_radius_px: int,
-    max_radius_px: int,
-    radius_step_px: int,
+    # min_radius_px: int,
+    # max_radius_px: int,
+    # radius_step_px: int,
+    # max_circles: int,
+    # detection_max_size: int,
+    well_diameter_px: int,
     max_circles: int,
     detection_max_size: int,
 ) -> list[tuple[int, int, int, float]]:
@@ -96,12 +100,14 @@ def detect_circles(
 
     # Use grayscale only for Hough detection.
     gray = as_grayscale(image)
-
     small, scale = _detection_image(gray, detection_max_size)
-    min_radius = max(2, round(min_radius_px * scale))
-    max_radius = max(min_radius, round(max_radius_px * scale))
-    radius_step = max(1, round(radius_step_px * scale))
-    radii = np.arange(min_radius, max_radius + 1, radius_step)
+    
+    expected_radius = max(2, round(well_diameter_px * scale / 2))
+    radius_tolerance = max(1, round(expected_radius * HOUGH_RADIUS_TOLERANCE))
+    min_radius = max(2, expected_radius - radius_tolerance)
+    max_radius = max(min_radius, expected_radius + radius_tolerance)
+    radii = np.arange(min_radius, max_radius + 1)
+    
     edges = canny(small, sigma=2.0) # FIXME How the canny edge detection is performed can vary a lot between images. Not quite sure how to deal with this fact or if I just set one value?
     hough = hough_circle(edges, radii, normalize=True)
 
@@ -112,8 +118,8 @@ def detect_circles(
     scores, xs, ys, found_radii = hough_circle_peaks(
         hough,
         radii,
-        min_xdistance=min_radius,
-        min_ydistance=min_radius,
+        min_xdistance=expected_radius,
+        min_ydistance=expected_radius,
         total_num_peaks=number_of_peaks,
     )
 
@@ -178,28 +184,24 @@ def create_organoid_mosaic(
     folder: Path,
     rows: int = 16,
     columns: int = 16,
-    min_radius_px: int = 140,
-    max_radius_px: int = 180,
+    well_diameter_px: int = 280,
 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """Detect organoids, choose them randomly, and build image/label mosaics."""
     folder = Path(folder)
     if not folder.is_dir():
         raise ValueError(f"Not a valid folder: {folder}")
-    if min_radius_px >= max_radius_px:
-        raise ValueError("min_radius_px must be smaller than max_radius_px.")
     
-    # Patch diameter plus approximately 15% margin on every side
-    patch_size = int(np.ceil(2.3 * max_radius_px))
-    
-    # Test approximately 20 different radii
-    radius_range = max_radius_px - min_radius_px
-    radius_step_px = max(1, round(radius_range / 20))
+    if well_diameter_px < 4:
+        raise ValueError("well_diameter_px must be at least 4 pixels.")
+
+    # Well diameter plus 15% surrounding space.
+    patch_size = int(np.ceil(1.15 * well_diameter_px))
     
     # Downsampling limit used only to make detection faster.
     detection_max_size = 1000
     
     # Use this when every image contains one microwell. 
-    max_circles_per_image = 2 # FIXME not sure how I should standardize this, depends a lot on the data that the user has.....
+    max_circles_per_image = 50
     
     files = sorted(
         path for path in folder.rglob("*")
@@ -207,45 +209,87 @@ def create_organoid_mosaic(
     )
     if not files:
         raise ValueError(f"No supported image files found in: {folder}, supported suffixes: {IMAGE_SUFFIXES}")
+    
+    circles_by_image: dict[
+        Path,
+        list[tuple[int, int, int, float]],
+    ] = {}
 
-    candidates: list[tuple[Path, int, int, int, float]] = []
     skipped: list[str] = []
 
     for path in files:
         try:
-            # image = _read_grayscale(path)
             image = _read_rgb(path)
+
             circles = detect_circles(
-                image,
-                min_radius_px,
-                max_radius_px,
-                radius_step_px,
-                max_circles_per_image,
-                detection_max_size,
+                image=image,
+                well_diameter_px=well_diameter_px,
+                max_circles=max_circles_per_image,
+                detection_max_size=detection_max_size,
             )
-            candidates.extend((path, *circle) for circle in circles)
+
+            if circles:
+                circles_by_image[path] = circles
+
         except Exception as error:
             skipped.append(f"{path.name}: {error}")
-
+    
     number_needed = rows * columns
-    if len(candidates) < number_needed:
-        details = f" First skipped file: {skipped[0]}" if skipped else ""
+
+    total_detected = sum(len(circles) for circles in circles_by_image.values())
+
+    if total_detected < number_needed:
+        details = (f" First skipped file: {skipped[0]}" if skipped else "")
+
         raise ValueError(
-            f"Found {len(candidates)} circles, but {number_needed} are needed. "
+            f"Found {total_detected} circles, "
+            f"but {number_needed} are needed. "
             "Try fewer rows/columns or a wider radius range."
             + details
         )
 
-    rng = np.random.default_rng(0) # I have set a random seed to ensure reproducibility of the mosaic generation.
-    selected_indices = rng.choice(len(candidates), number_needed, replace=False)
+    rng = np.random.default_rng(0)
+
+    first_choices: list[tuple[Path, int, int, int, float]] = []
+
+    remaining_choices: list[tuple[Path, int, int, int, float]] = []
+
+    for path, circles in circles_by_image.items():
+        # The Hough results are normally ordered by score.
+        # Sorting makes this intention explicit.
+        sorted_circles = sorted(
+            circles,
+            key=lambda circle: circle[3],
+            reverse=True,
+        )
+
+        # Strongest detected well from this image.
+        first_choices.append((path, *sorted_circles[0]))
+        
+        # Other wells are fallback choices.
+        remaining_choices.extend((path, *circle) for circle in sorted_circles[1:])
+
+    # Randomize the order of the source images.
+    rng.shuffle(first_choices)
+
+    # First use at most one well from every image.
+    selected_candidates = first_choices[:number_needed]
+
+    # Only reuse images when the mosaic needs more wells.
+    if len(selected_candidates) < number_needed:
+        rng.shuffle(remaining_choices)
+
+        number_missing = (number_needed - len(selected_candidates))
+
+        selected_candidates.extend(remaining_choices[:number_missing])
 
     mosaic = np.zeros((rows * patch_size, columns * patch_size, 3), np.float32)
     labels = np.zeros(mosaic.shape[:2], np.uint8)
     records: list[dict] = []
-
-    for tile_index, candidate_index in enumerate(selected_indices):
-        path, y, x, radius, score = candidates[int(candidate_index)]
-        # patch = _crop_centered(_read_grayscale(path), y, x, patch_size)
+    
+    for tile_index, candidate in enumerate(selected_candidates):
+        path, y, x, radius, score = candidate
+        
         patch = _crop_centered(_read_rgb(path), y, x, patch_size)
 
         row, column = divmod(tile_index, columns)

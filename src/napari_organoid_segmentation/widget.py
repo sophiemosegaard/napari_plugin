@@ -16,23 +16,20 @@ from .segmentation_convpaint import train_and_save_convpaint
     folder={"label": "Image folder", "mode": "d"},
     rows={"min": 1},
     columns={"min": 1},
-    min_radius_px={"min": 2},
-    max_radius_px={"min": 3},  
+    well_diameter_px={"label": "Well diameter (px)", "min": 4},  
 )
 def organoid_mosaic_widget(
     folder: Path,
     rows: int = 16,
     columns: int = 16,
-    min_radius_px: int = 140,
-    max_radius_px: int = 180,
+    well_diameter_px: int = 280,
 ) -> list[LayerDataTuple]:
     """Detect organoids, choose them randomly, and build image/label mosaics."""
     mosaic_image, mosaic_labels, detected_organoids = create_organoid_mosaic(
         folder=folder,
         rows=rows,
         columns=columns,
-        min_radius_px=min_radius_px,
-        max_radius_px=max_radius_px,
+        well_diameter_px=well_diameter_px,
     )
 
     show_info(f"Created organoid mosaic {rows} x {columns} with {len(detected_organoids)} detected organoids.")
@@ -69,12 +66,16 @@ def train_convpaint_widget(
     call_button="Segment folder and save measurements",
     model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
     image_folder={"label": "Image folder", "mode": "d"},
+    well_diameter_px={"label": "Well diameter (px)", "min": 4},
+    max_wells_per_image={"label": "Max wells per image", "min": 1},
     output_folder={"label": "Measurements folder", "mode": "d"},
     output_filename={"label": "Measurements CSV name"},
 )
 def batch_analysis_widget(
     model_path: Path = Path("organoid_convpaint.pkl"),
     image_folder: Path = Path("."),
+    well_diameter_px: int = 280,
+    max_wells_per_image: int = 50,
     output_folder: Path = Path("reports"),
     output_filename: str = "organoid_measurements.csv",
 ) -> None:
@@ -83,6 +84,8 @@ def batch_analysis_widget(
     number_images, number_organoids, mask_folder = analyze_image_folder(
         model_path=model_path,
         image_folder=image_folder,
+        well_diameter_px=well_diameter_px,
+        max_wells_per_image=max_wells_per_image,
         output_folder=output_folder,
         output_filename=output_filename,
     )
@@ -166,3 +169,19 @@ def load_annotation_project_widget(
         (mosaic, {"name": "organoid_mosaic", "rgb": True}, "image"),
         (annotations.astype(np.uint8), {"name": "organoid_annotations", "opacity": 0.45}, "labels"),
     ]
+    
+
+@magic_factory(
+    call_button="Show credits",
+)
+def about_plugin_widget() -> None:
+    """Show plugin author and optional support information."""
+
+    show_info(
+        "Organoid Segmentation\n"
+        "Created by Sophie Mosegaard\n\n"
+        "This plugin runs on Python; "
+        "its student developer runs on coffee. ☕\n\n"
+        "Optional coffee support:\n"
+        "<YOUR_DONATION_LINK>"
+    )

@@ -23,6 +23,10 @@ contributions:
       title: Load Annotation Project
       python_name: napari_organoid_segmentation.widget:load_annotation_project_widget
 
+    - id: napari-organoid-segmentation.about
+      title: About Organoid Segmentation
+      python_name: napari_organoid_segmentation.widget:about_plugin_widget
+
   widgets:
     - command: napari-organoid-segmentation.mosaic_widget
       display_name: Create Organoid Mosaic
@@ -38,3 +42,6 @@ contributions:
 
     - command: napari-organoid-segmentation.load_annotation_project
       display_name: Load Annotation Project
+
+    - command: napari-organoid-segmentation.about
+      display_name: About / Credits

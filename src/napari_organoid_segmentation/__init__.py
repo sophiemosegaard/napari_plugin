@@ -4,6 +4,7 @@ from .widget import (
     batch_analysis_widget,
     save_annotation_project_widget,
     load_annotation_project_widget,
+    about_plugin_widget,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "batch_analysis_widget",
     "save_annotation_project_widget",
     "load_annotation_project_widget",
+    "about_plugin_widget",
 ]
