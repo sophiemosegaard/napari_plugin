@@ -2,7 +2,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from skimage.draw import disk
 from skimage.io import imread, imsave
 from skimage.measure import label
 
@@ -10,109 +9,65 @@ from .export import save_measurements
 from .measurements import measure_organoids
 from .preprocessing import as_grayscale
 from .segmentation_convpaint import load_convpaint_model, segment_convpaint
-from .mosaic import detect_circles
 
 
 IMAGE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
-WELL_MARGIN_FRACTION = 0.05
 
-# A border well must have at least 20% of its area visible.
-MIN_BORDER_WELL_FRACTION = 0.20
-
-def keep_largest_object_per_circle(
-    binary_mask: np.ndarray,
-    circles: list[tuple[int, int, int, float]],
-    well_diameter_px: int,
+def label_organoids(
+    mask: np.ndarray,
+    min_area_px: int,
 ) -> np.ndarray:
-    """Keep one complete segmentation object per detected well."""
+    """Label all sufficiently large foreground objects."""
 
-    # Label the complete prediction before applying any circle.
-    all_objects = label(binary_mask > 0)
+    # Give every connected foreground region an ID.
+    labels = label(
+        np.asarray(mask, dtype=bool),
+        connectivity=2,
+    )
 
-    output_labels = np.zeros(
-        binary_mask.shape,
+    if labels.max() == 0:
+        return np.zeros(
+            mask.shape,
+            dtype=np.uint32,
+        )
+
+    # Number of pixels belonging to each label.
+    areas = np.bincount(labels.ravel())
+
+    # Keep objects larger than the minimum area.
+    keep = np.flatnonzero(
+        areas >= min_area_px
+    )
+
+    # Label 0 is background and must not be retained.
+    keep = keep[keep != 0]
+
+    # Relabel retained organoids as 1, 2, 3, ...
+    mapping = np.zeros(
+        len(areas),
         dtype=np.uint32,
     )
 
-    margin_px = max(
-        2,
-        round(
-            well_diameter_px
-            * WELL_MARGIN_FRACTION
-        ),
+    mapping[keep] = np.arange(
+        1,
+        len(keep) + 1,
+        dtype=np.uint32,
     )
 
-    used_object_ids: set[int] = set()
-    next_output_id = 1
-
-    for y, x, radius, _score in circles:
-        # This circle is used only to select an object.
-        selection_radius = radius + margin_px
-
-        rr, cc = disk(
-            (y, x),
-            selection_radius,
-            shape=binary_mask.shape,
-        )
-
-        object_ids = all_objects[rr, cc]
-        object_ids = object_ids[
-            object_ids > 0
-        ]
-
-        if object_ids.size == 0:
-            continue
-
-        # Count how strongly every complete object overlaps
-        # the enlarged well region.
-        overlap_areas = np.bincount(object_ids)
-
-        # Do not assign one object to two different wells.
-        for object_id in used_object_ids:
-            if object_id < len(overlap_areas):
-                overlap_areas[object_id] = 0
-
-        selected_object_id = int(
-            np.argmax(overlap_areas)
-        )
-
-        if overlap_areas[selected_object_id] == 0:
-            continue
-
-        # Copy the COMPLETE connected object.
-        # It is not cropped by the Hough circle.
-        complete_object = (
-            all_objects == selected_object_id
-        )
-
-        output_labels[
-            complete_object
-        ] = next_output_id
-
-        used_object_ids.add(
-            selected_object_id
-        )
-
-        next_output_id += 1
-
-    return output_labels
+    return mapping[labels]
 
 def analyze_image_folder(
     model_path: Path,
     image_folder: Path,
     output_folder: Path,
     output_filename: str = "organoid_measurements.csv",
-    well_diameter_px: int = 280,
-    include_border_wells: bool = False,
+    # well_diameter_px: int = 280,
+    # include_border_wells: bool = False,
+    min_area_px: int = 5000,
 ) -> tuple[int, int, Path]:
     """Load a ConvPaint model, segment all images, and save one measurement table."""
-    
-    if well_diameter_px < 4:
-        raise ValueError("well_diameter_px must be at least 4 pixels.")
 
     load_convpaint_model(model_path)
-    
-    min_inside_fraction = (MIN_BORDER_WELL_FRACTION if include_border_wells else 1.0)
 
     image_folder = Path(image_folder)
     output_folder = Path(output_folder)
@@ -147,25 +102,12 @@ def analyze_image_folder(
     for image_path in image_paths:
         image = imread(image_path)
         
-        circles = detect_circles(
-            image=image,
-            well_diameter_px=well_diameter_px,
-            detection_max_size=1000,
-            min_inside_fraction=min_inside_fraction,
-            detect_outside_centers=include_border_wells,
+        binary_mask = segment_convpaint(image)
+
+        object_labels = label_organoids(
+            mask=binary_mask,
+            min_area_px=min_area_px,
         )
-
-        if circles:
-            binary_mask = segment_convpaint(image)
-
-            object_labels = keep_largest_object_per_circle(
-                binary_mask=binary_mask,
-                circles=circles,
-                well_diameter_px=well_diameter_px,
-            )
-        else:
-            # No microwell detected: save an empty segmentation.
-            object_labels = np.zeros(image.shape[:2], dtype=np.uint32)
 
         relative_path = image_path.relative_to(image_folder)
 

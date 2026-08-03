@@ -65,16 +65,12 @@ def train_convpaint_widget(
     call_button="Segment folder and save measurements",
     model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
     image_folder={"label": "Image folder", "mode": "d"},
-    well_diameter_px={"label": "Well diameter (px)", "min": 4},
-    include_border_wells={"label": "Include wells cut by image border",},
     output_folder={"label": "Measurements folder", "mode": "d"},
     output_filename={"label": "Measurements CSV name"},
 )
 def batch_analysis_widget(
     model_path: Path = Path("organoid_convpaint.pkl"),
     image_folder: Path = Path("."),
-    well_diameter_px: int = 280,
-    include_border_wells: bool = False,
     output_folder: Path = Path("reports"),
     output_filename: str = "organoid_measurements.csv",
 ) -> None:
@@ -83,28 +79,24 @@ def batch_analysis_widget(
     number_images, number_organoids, mask_folder = analyze_image_folder(
         model_path=model_path,
         image_folder=image_folder,
-        well_diameter_px=well_diameter_px,
+        min_area_px=5000,
         output_folder=output_folder,
         output_filename=output_filename,
-        include_border_wells=include_border_wells,
     )
 
     output_csv = Path(output_folder) / Path(output_filename).name
     if output_csv.suffix.lower() != ".csv":
         output_csv = output_csv.with_suffix(".csv")
-        
-    border_mode = ("including border wells" if include_border_wells else "complete wells only")
 
     show_info(
         f"Processed {number_images} images.\n"
-        f"({border_mode}).\n"
         f"Measured {number_organoids} organoids.\n"
         f"CSV saved to:\n{output_csv}\n"
         f"Segmentations saved to:\n{mask_folder}"
     )
 
 @magic_factory(
-    call_button="Save annotation project",
+    call_button="Save annotated mosaic",
     output_path={
         "label": "Project file",
         "mode": "w",
@@ -144,7 +136,7 @@ def save_annotation_project_widget(
     
     
 @magic_factory(
-    call_button="Load annotation project",
+    call_button="Load annotated mosaic",
     input_path={
         "label": "Project file",
         "mode": "r",

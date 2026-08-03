@@ -16,9 +16,9 @@ HOUGH_RADIUS_TOLERANCE = 0.08
 MOSAIC_MIN_INSIDE_FRACTION = 0.80
 
 
-def _read_grayscale(path: Path) -> np.ndarray:
-    """Read one 2D grayscale or RGB image as float32."""
-    return img_as_float32(as_grayscale(imread(path)))
+# def _read_grayscale(path: Path) -> np.ndarray:
+#     """Read one 2D grayscale or RGB image as float32."""
+#     return img_as_float32(as_grayscale(imread(path)))
 
 def _read_rgb(path: Path) -> np.ndarray:
     """Read an image as RGB float32 with shape (Y, X, 3)."""
@@ -42,7 +42,8 @@ def _read_rgb(path: Path) -> np.ndarray:
             f"Unsupported image shape: {image.shape}"
         )
 
-    return img_as_float32(image)
+    # return img_as_float32(image)
+    return image.astype(np.float32, copy=False)
 
 
 def _detection_image(image: np.ndarray, max_size: int) -> tuple[np.ndarray, float]:
@@ -270,7 +271,7 @@ def create_organoid_mosaic(
             + details
         )
 
-    rng = np.random.default_rng(0)
+    rng = np.random.default_rng(36) # Set random seed for reproducability.
 
     first_choices: list[tuple[Path, int, int, int, float]] = []
 
