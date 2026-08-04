@@ -7,6 +7,10 @@ contributions:
       title: Create Annotation Layer
       python_name: napari_organoid_segmentation.widget:organoid_workflow_widget
 
+    - id: napari-organoid-segmentation.annotation_project
+      title: Save or Open Annotation
+      python_name: napari_organoid_segmentation.widget:annotation_project_widget
+
     - id: napari-organoid-segmentation.train_convpaint
       title: Train and Save ConvPaint Model
       python_name: napari_organoid_segmentation.widget:train_convpaint_widget
@@ -14,10 +18,6 @@ contributions:
     - id: napari-organoid-segmentation.batch_analysis
       title: Segment Folder and Save Measurements
       python_name: napari_organoid_segmentation.widget:batch_analysis_widget
-
-    - id: napari-organoid-segmentation.annotation_project
-      title: Save or Open Annotation Project
-      python_name: napari_organoid_segmentation.widget:annotation_project_widget
 
     - id: napari-organoid-segmentation.roi_iou
       title: Load ROI Folder or Calculate IoU
@@ -32,14 +32,14 @@ contributions:
     - command: napari-organoid-segmentation.organoid_workflow
       display_name: Create Annotation Layer
 
+    - command: napari-organoid-segmentation.annotation_project
+      display_name: Save or Open Annotation
+
     - command: napari-organoid-segmentation.train_convpaint
       display_name: Train and Save ConvPaint Model
 
     - command: napari-organoid-segmentation.batch_analysis
       display_name: Segment Folder and Save Measurements
-
-    - command: napari-organoid-segmentation.annotation_project
-      display_name: Save or Open Annotation Project
 
     - command: napari-organoid-segmentation.roi_iou
       display_name: Load ROI Folder or Calculate IoU
