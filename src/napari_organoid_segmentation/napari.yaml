@@ -3,13 +3,9 @@ display_name: Organoid Segmentation
 
 contributions:
   commands:
-    - id: napari-organoid-segmentation.mosaic_widget
-      title: Create Organoid Mosaic
-      python_name: napari_organoid_segmentation.widget:organoid_mosaic_widget
-
-    - id: napari-organoid-segmentation.patch_stack_widget
-      title: Create Individual Well Patches
-      python_name: napari_organoid_segmentation.widget:organoid_patch_stack_widget
+    - id: napari-organoid-segmentation.organoid_workflow
+      title: Create Annotation Layer
+      python_name: napari_organoid_segmentation.widget:organoid_workflow_widget
 
     - id: napari-organoid-segmentation.train_convpaint
       title: Train and Save ConvPaint Model
@@ -19,32 +15,22 @@ contributions:
       title: Segment Folder and Save Measurements
       python_name: napari_organoid_segmentation.widget:batch_analysis_widget
 
-    - id: napari-organoid-segmentation.load_imagej_roi
-      title: Load ROI zip
-      python_name: napari_organoid_segmentation.widget:load_imagej_roi_widget
+    - id: napari-organoid-segmentation.annotation_project
+      title: Save or Open Annotation Project
+      python_name: napari_organoid_segmentation.widget:annotation_project_widget
 
-    - id: napari-organoid-segmentation.segmentation_iou
-      title: Calculate Saved Segmentation IoU
-      python_name: napari_organoid_segmentation.widget:segmentation_iou_widget
+    - id: napari-organoid-segmentation.roi_iou
+      title: Load ROI Folder or Calculate IoU
+      python_name: napari_organoid_segmentation.widget:roi_iou_widget
 
-    - id: napari-organoid-segmentation.save_annotation_project
-      title: Save Annotation Project
-      python_name: napari_organoid_segmentation.widget:save_annotation_project_widget
-
-    - id: napari-organoid-segmentation.load_annotation_project
-      title: Load Annotation Project
-      python_name: napari_organoid_segmentation.widget:load_annotation_project_widget
-
-    - id: napari-organoid-segmentation.about
-      title: About Organoid Segmentation
-      python_name: napari_organoid_segmentation.widget:about_plugin_widget
+    # Hidden for now; uncomment to restore the credits widget in the menu.
+    # - id: napari-organoid-segmentation.about
+    #   title: About Organoid Segmentation
+    #   python_name: napari_organoid_segmentation.widget:about_plugin_widget
 
   widgets:
-    - command: napari-organoid-segmentation.mosaic_widget
-      display_name: Create Organoid Mosaic
-
-    - command: napari-organoid-segmentation.patch_stack_widget
-      display_name: Create Individual Well Patches
+    - command: napari-organoid-segmentation.organoid_workflow
+      display_name: Create Annotation Layer
 
     - command: napari-organoid-segmentation.train_convpaint
       display_name: Train and Save ConvPaint Model
@@ -52,17 +38,12 @@ contributions:
     - command: napari-organoid-segmentation.batch_analysis
       display_name: Segment Folder and Save Measurements
 
-    - command: napari-organoid-segmentation.load_imagej_roi
-      display_name: Load ROI zip
+    - command: napari-organoid-segmentation.annotation_project
+      display_name: Save or Open Annotation Project
 
-    - command: napari-organoid-segmentation.segmentation_iou
-      display_name: Calculate Saved Segmentation IoU
+    - command: napari-organoid-segmentation.roi_iou
+      display_name: Load ROI Folder or Calculate IoU
 
-    - command: napari-organoid-segmentation.save_annotation_project
-      display_name: Save Annotation Project
-
-    - command: napari-organoid-segmentation.load_annotation_project
-      display_name: Load Annotation Project
-
-    - command: napari-organoid-segmentation.about
-      display_name: About / Credits
+    # Hidden for now; uncomment to restore the credits widget in the menu.
+    # - command: napari-organoid-segmentation.about
+    #   display_name: About / Credits

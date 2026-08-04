@@ -16,10 +16,6 @@ HOUGH_RADIUS_TOLERANCE = 0.08
 MOSAIC_MIN_INSIDE_FRACTION = 0.80
 
 
-# def _read_grayscale(path: Path) -> np.ndarray:
-#     """Read one 2D grayscale or RGB image as float32."""
-#     return img_as_float32(as_grayscale(imread(path)))
-
 def _read_rgb(path: Path) -> np.ndarray:
     """Read an image as RGB float32 with shape (Y, X, 3)."""
 
@@ -200,11 +196,11 @@ def _crop_centered(image: np.ndarray, y: int, x: int, size: int) -> np.ndarray:
 
     return patch
 
-
 def create_organoid_mosaic(
     folder: Path,
     patches_per_side: int = 4,
     well_diameter_px: int = 280,
+    number_patches: int | None = None,
 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
     """Detect organoids, choose them randomly, and build image/label mosaics."""
     folder = Path(folder)
@@ -216,6 +212,15 @@ def create_organoid_mosaic(
     
     if well_diameter_px < 4:
         raise ValueError("well_diameter_px must be at least 4 pixels.")
+    
+    if number_patches is not None:
+        if number_patches < 1:
+            raise ValueError("number_patches must be at least 1.")
+
+        if number_patches > patches_per_side**2:
+            raise ValueError(
+                "number_patches cannot exceed patches_per_side squared."
+            )
 
     # Well diameter plus 15% surrounding space.
     patch_size = int(np.ceil(1.15 * well_diameter_px))
@@ -255,8 +260,7 @@ def create_organoid_mosaic(
         except Exception as error:
             skipped.append(f"{path.name}: {error}")
     
-    # number_needed = rows * columns
-    number_needed = patches_per_side * patches_per_side
+    number_needed = (patches_per_side**2 if number_patches is None else number_patches)
 
     total_detected = sum(len(circles) for circles in circles_by_image.values())
 

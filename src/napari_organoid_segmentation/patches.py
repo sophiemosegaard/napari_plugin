@@ -1,4 +1,6 @@
 from pathlib import Path
+import math
+
 import numpy as np
 
 from .mosaic import create_organoid_mosaic
@@ -6,14 +8,20 @@ from .mosaic import create_organoid_mosaic
 
 def create_organoid_patch_stack(
     folder: Path,
-    patches_per_side: int = 4,
+    number_patches: int = 16,
     well_diameter_px: int = 280,
 ) -> tuple[np.ndarray, np.ndarray, list[dict]]:
-    """Return the mosaic wells as separate RGB patches."""
+    """Return exactly ``number_patches`` separate RGB patches."""
+
+    if number_patches < 1:
+        raise ValueError("number_patches must be at least 1.")
+
+    patches_per_side = math.ceil(math.sqrt(number_patches))
 
     mosaic, _, records = create_organoid_mosaic(
         folder=folder,
         patches_per_side=patches_per_side,
+        number_patches=number_patches,
         well_diameter_px=well_diameter_px,
     )
 

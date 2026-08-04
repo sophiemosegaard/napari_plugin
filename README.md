@@ -1,64 +1,76 @@
-# Organoid Segmentation Workflow
+# Organoid Segmentation
 
-Install the plugin from this folder:
+Napari plugin for building organoid annotation layers, saving projects, training a ConvPaint model, segmenting folders, and evaluating saved segmentations against ImageJ ROIs.
+
+## Install
+
+Install the package in editable mode from this repository:
 
 ```bash
-python -m pip install -e . 
+python -m pip install -e .
 ```
 
-Start napari and open:
+Then start napari from this workspace:
 
-`Plugins -> Organoid Segmentation -> Create Organoid Mosaic`
+```bash
+python start_napari.py
+```
 
-Suggested first settings:
+Open the plugin from `Plugins -> Organoid Segmentation`.
 
-### Well diameter
+## Main Widgets
 
-Measure the diameter of one representative well in FIJI and enter
-the result as `well_diameter_px`.
+### Create Annotation Layer
 
-The plugin automatically searches a small radius range around this
-measurement. During segmentation postprocessing, an additional
-internal margin is used to associate organoids with their wells.
-The complete connected segmentation is retained and is not cropped
-at the Hough-circle boundary.
+Use this widget to choose how the annotation data should be presented.
 
-FIXME: I want to make the plugin very easy with as less parameters as possible and it should still work.....
-- `rows = 4`, `columns = 4` while testing
-- `patch_size` larger than twice the largest organoid radius
-- `well_diameter_px`: the well diameter measured in pixels, for example in FIJI
-- lower `hough_score` if too few circles are detected
-- increase `random_seed` to create a different random mosaic
+Choose `Mosaic` when you want a single tiled image for fast review. Choose `Patch stack` when you want the selected wells shown as a stack of separate slices.
 
-The workflow is split into three steps:
+Useful settings:
 
-1. Create a mosaic from an image folder and optionally save the edited annotation as an `*.npz` project.
-2. Train a ConvPaint model from the mosaic image and its annotation, then save the model to a folder you choose.
-3. Load a saved model and run segmentation plus measurements on an image folder, saving the measurement CSV and the object masks to locations you choose.
+* `Image folder`: folder containing the raw images.
+* `Annotation mode`: switch between mosaic and patch-stack output.
+* `Patches per side`: number of tiles per row and column.
+* `Number patches`: total number of patches to use when `Annotation mode` is `Patch stack`.
+* `Well diameter (px)`: approximate well diameter in pixels.
 
-The first widget creates:
+### Save or Open Annotation Project
 
-1. `organoid_mosaic`: the image mosaic
-2. `organoid_annotations`: editable labels, with 0 as background and one label for the organoids to segment
+This widget combines saving and loading into one place.
 
-Use napari's Labels paint/area tools to correct the borders and to draw specific organoid borders.
+* `Save project` stores the currently active image and annotation layers as an `.npz` file in the folder you choose, using the file name you type.
+* `Open project` opens a saved `.npz` project file and restores the corresponding image and annotation layers.
+* Opening does not require any image or annotation layers to be loaded already.
 
-Suggested starting values:
-
-- `rows = 4`, `columns = 4` while testing
-- lower the circle detection threshold if too few circles are detected
-- increase the number of selected tiles if you want a larger mosaic
+When saving, make sure the correct image and annotation layers are visible in napari.
 
 
+### Train and Save Model
+
+Train a ConvPaint model from the currently displayed image and annotation layers, then save the model to a folder of your choice.
+
+### Segment Folder and Save Measurements
+
+Run batch segmentation on a folder of images, save the measurements table, and write the object masks to a sibling segmentation folder.
+
+### Load ROI Folder or Calculate IoU
+
+This widget overlays ImageJ ROIs on top of the current image stack for visual inspection. It can also calculate IoU against previously saved segmentation masks and write the results to CSV.
+
+* `Visualize ROIs` loads the ROI labels only.
+* `Visualize ROIs and calculate IoU` loads the ROI labels and also compares them with saved segmentation masks.
+
+You need the current image stack loaded in napari so the ROI folder can be matched to the correct shape.
+
+## Suggested Workflow
+
+1. Create a mosaic or patch stack from an image folder.
+2. Clean up the annotation in napari.
+3. Save the project if you want to continue later.
+4. Train the ConvPaint model.
+5. Segment a folder and save measurements.
+6. Optionally load ROI folders and calculate IoU for comparison.
 
 ## Author
 
-Created by **Sophie Mosegaard**.
-
-## Coffee-powered development ☕
-
-This plugin runs on Python; its student developer runs on coffee.
-
-If the plugin saves you some time and you enjoy using it, an optional coffee donation is always appreciated:
-
-"IBAN: CH41 0079 0042 9430 0433 1"
+Created by Sophie Mosegaard.

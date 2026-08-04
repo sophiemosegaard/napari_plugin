@@ -1,89 +1,109 @@
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
+import napari
 from magicgui import magic_factory
+from magicgui.widgets import Container
 from napari.layers import Image, Labels
 from napari.types import LayerDataTuple
 from napari.utils.notifications import show_info
 
 from .batch_analysis import analyze_image_folder
+from .evaluation import calculate_segmentation_folder_iou
 from .mosaic import create_organoid_mosaic
-from .segmentation_convpaint import train_and_save_convpaint
 from .patches import create_organoid_patch_stack
 from .roi_io import image_stack_shape, load_imagej_roi_folder
-from .evaluation import calculate_segmentation_folder_iou
+from .segmentation_convpaint import train_and_save_convpaint
+
 
 @magic_factory(
-    call_button="Create Organoid Mosaic",
+    call_button="Create Annotation Layer",
     folder={"label": "Image folder", "mode": "d"},
+    annotation_mode={"label": "Annotation mode", "choices": ["Mosaic", "Patch stack"]},
     patches_per_side={"label": "Patches per side", "min": 1},
-    well_diameter_px={"label": "Well diameter (px)", "min": 4},  
+    number_patches={"label": "Number patches", "min": 1},
+    well_diameter_px={"label": "Well diameter (px)", "min": 4},
 )
-def organoid_mosaic_widget(
+def organoid_workflow_widget(
     folder: Path,
+    annotation_mode: str = "Mosaic",
     patches_per_side: int = 4,
+    number_patches: int = 16,
     well_diameter_px: int = 280,
 ) -> list[LayerDataTuple]:
-    """Detect organoids, choose them randomly, and build image/label mosaics."""
-    mosaic_image, mosaic_labels, detected_organoids = create_organoid_mosaic(
-        folder=folder,
-        patches_per_side=patches_per_side,
-        well_diameter_px=well_diameter_px,
-    )
-    
-    total_patches = patches_per_side**2
+    """Create either a mosaic view or a patch-stack view for annotation."""
 
-    show_info(f"Created organoid mosaic {patches_per_side} x {patches_per_side} with {total_patches} detected organoids.")
-    metadata = {"tiles": detected_organoids}
-
-    return [
-        (mosaic_image, {"name": "organoid_mosaic", "rgb": True, "metadata": metadata}, "image"),
-        (mosaic_labels, {"name": "organoid_annotations", "opacity": 0.45, "metadata": metadata}, "labels"),
-    ]
-    
-
-@magic_factory(
-    call_button="Create Individual Well Patches",
-    folder={
-        "label": "Image folder",
-        "mode": "d",
-    },
-    patches_per_side={
-        "label": "Patches per side",
-        "min": 1,
-    },
-    well_diameter_px={
-        "label": "Well diameter (px)",
-        "min": 4,
-    },
-)
-def organoid_patch_stack_widget(
-    folder: Path,
-    patches_per_side: int = 4,
-    well_diameter_px: int = 280,
-) -> list[LayerDataTuple]:
-    """Show selected wells as separate napari slices."""
-
-    patches, annotations, records = (
-        create_organoid_patch_stack(
+    if annotation_mode == "Mosaic":
+        mosaic_image, mosaic_labels, detected_organoids = create_organoid_mosaic(
             folder=folder,
             patches_per_side=patches_per_side,
             well_diameter_px=well_diameter_px,
         )
+
+        total_patches = patches_per_side**2
+        show_info(
+            f"Created mosaic view with {total_patches} tiles and {len(detected_organoids)} detected organoids."
+        )
+
+        metadata = {"mode": "mosaic", "tiles": detected_organoids}
+
+        return [
+            (
+                mosaic_image,
+                {
+                    "name": "organoid_mosaic",
+                    "rgb": True,
+                    "metadata": metadata,
+                },
+                "image",
+            ),
+            (
+                mosaic_labels,
+                {
+                    "name": "organoid_annotations",
+                    "opacity": 0.45,
+                    "metadata": metadata,
+                },
+                "labels",
+            ),
+        ]
+
+    
+    patches, annotations, records = create_organoid_patch_stack(
+    folder=folder,
+    number_patches=number_patches,
+    well_diameter_px=well_diameter_px,
     )
-
-    metadata = {
-        "patches": records,
-    }
-
+    
     show_info(
-        f"Created {len(patches)} individual well patches. "
-        "Use the patch slider to annotate them."
+    f"Created patch-stack view with {len(patches)} selected wells. "
+    "Use the patch slider to annotate them."
     )
+
+    metadata = {"mode": "patch_stack", "patches": records}
 
     return [
-        (patches, {"name": "organoid_patches", "rgb": True, "metadata": metadata, "axis_labels": ("patch", "y", "x")}, "image"),
-        (annotations, {"name": "patch_annotations", "opacity": 0.45, "metadata": metadata, "axis_labels": ("patch", "y", "x",)}, "labels"),
+        (
+            patches,
+            {
+                "name": "organoid_patches",
+                "rgb": True,
+                "metadata": metadata,
+                "axis_labels": ("patch", "y", "x"),
+            },
+            "image",
+        ),
+        (
+            annotations,
+            {
+                "name": "patch_annotations",
+                "opacity": 0.45,
+                "metadata": metadata,
+                "axis_labels": ("patch", "y", "x"),
+            },
+            "labels",
+        ),
     ]
 
 
@@ -104,13 +124,184 @@ def train_convpaint_widget(
         model_name=model_name,
     )
 
-    show_info(
-        f"ConvPaint model saved to:\n{model_path}"
+    show_info(f"ConvPaint model saved to:\n{model_path}")
+
+
+@magic_factory(
+    call_button="Save annotation project",
+    image={"label": "Image layer"},
+    annotation={"label": "Annotation layer"},
+    project_file={
+        "label": "Save project as",
+        "mode": "w",
+        "filter": "Annotation project (*.npz)",
+    },
+)
+def save_annotation_project_widget(
+    image: Image,
+    annotation: Labels,
+    project_file: Path = Path("organoid_annotation_project.npz"),
+) -> None:
+    """Save the selected image and Labels layers as one .npz project."""
+
+    # Napari layer selectors can be empty when no matching layer exists.
+    if image is None or annotation is None:
+        show_info(
+            "Choose an Image layer and a Labels layer before saving."
+        )
+        return
+
+    if project_file is None:
+        show_info("Choose a file name and location for the project.")
+        return
+
+    image_data = np.asarray(image.data)
+    annotation_data = np.asarray(annotation.data)
+
+    image_is_grayscale = image_data.shape == annotation_data.shape
+    image_is_rgb = (
+        image_data.ndim == annotation_data.ndim + 1
+        and image_data.shape[-1] in (3, 4)
+        and image_data.shape[:-1] == annotation_data.shape
     )
+
+    if not (image_is_grayscale or image_is_rgb):
+        raise ValueError(
+            "Image and annotation dimensions do not match. "
+            f"Image: {image_data.shape}; "
+            f"annotations: {annotation_data.shape}."
+        )
+
+    project_path = Path(project_file).with_suffix(".npz")
+    project_path.parent.mkdir(parents=True, exist_ok=True)
+
+    np.savez_compressed(
+        project_path,
+        image=image_data,
+        annotations=annotation_data,
+        image_name=np.asarray(image.name),
+        annotation_name=np.asarray(annotation.name),
+    )
+
+    show_info(f"Annotation project saved to:\n{project_path}")
+
+
+@magic_factory(
+    call_button="Open annotation project",
+    project_file={
+        "label": "Project file",
+        "mode": "r",
+        "filter": "Annotation project (*.npz)",
+    },
+)
+def open_annotation_project_widget(
+    project_file: Path = Path("organoid_annotation_project.npz"),
+) -> None:
+    """Open an .npz project without requiring pre-existing layers."""
+
+    if project_file is None:
+        show_info("Choose an .npz annotation project to open.")
+        return
+
+    project_path = Path(project_file)
+
+    if not project_path.is_file():
+        show_info(f"Project not found: {project_path}")
+        return
+
+    with np.load(project_path, allow_pickle=False) as project:
+        image_key = "image" if "image" in project else "mosaic"
+
+        if image_key not in project or "annotations" not in project:
+            raise ValueError(
+                "The selected file is not a valid annotation project. "
+                "It must contain 'image' (or legacy 'mosaic') and "
+                "'annotations'."
+            )
+
+        image_data = np.asarray(project[image_key])
+        annotations = np.asarray(project["annotations"])
+
+        image_name = (
+            str(project["image_name"].item())
+            if "image_name" in project
+            else None
+        )
+        annotation_name = (
+            str(project["annotation_name"].item())
+            if "annotation_name" in project
+            else None
+        )
+
+    image_is_grayscale = image_data.shape == annotations.shape
+    image_is_rgb = (
+        image_data.ndim == annotations.ndim + 1
+        and image_data.shape[-1] in (3, 4)
+        and image_data.shape[:-1] == annotations.shape
+    )
+
+    if not (image_is_grayscale or image_is_rgb):
+        raise ValueError(
+            "Saved image and annotation dimensions do not match. "
+            f"Image: {image_data.shape}; "
+            f"annotations: {annotations.shape}."
+        )
+
+    viewer = napari.current_viewer()
+    if viewer is None:
+        show_info("No napari viewer is open.")
+        return
+
+    is_patch_stack = annotations.ndim == 3
+
+    if image_name is None:
+        image_name = (
+            "organoid_patches" if is_patch_stack else "organoid_mosaic"
+        )
+    if annotation_name is None:
+        annotation_name = (
+            "patch_annotations"
+            if is_patch_stack
+            else "organoid_annotations"
+        )
+
+    image_options = {
+        "name": image_name,
+        "rgb": image_is_rgb,
+    }
+    label_options = {
+        "name": annotation_name,
+        "opacity": 0.45,
+    }
+
+    if is_patch_stack:
+        image_options["axis_labels"] = ("patch", "y", "x")
+        label_options["axis_labels"] = ("patch", "y", "x")
+
+    viewer.add_image(image_data, **image_options)
+    viewer.add_labels(annotations, **label_options)
+
+    show_info(f"Annotation project loaded from:\n{project_path}")
+
+
+def annotation_project_widget() -> Container:
+    """One dock widget containing independent Save and Open controls."""
+
+    return Container(
+        widgets=[
+            save_annotation_project_widget(),
+            open_annotation_project_widget(),
+        ]
+    )
+
 
 @magic_factory(
     call_button="Segment folder and save measurements",
-    model_path={"label": "ConvPaint model", "mode": "r", "filter": "ConvPaint model (*.pkl)"},
+    model_path={
+        "label": "ConvPaint model",
+        "mode": "r",
+        "filter": "ConvPaint model (*.pkl)",
+    },
     image_folder={"label": "Image folder", "mode": "d"},
     output_folder={"label": "Measurements folder", "mode": "d"},
     output_filename={"label": "Measurements CSV name"},
@@ -141,70 +332,62 @@ def batch_analysis_widget(
         f"CSV saved to:\n{output_csv}\n"
         f"Segmentations saved to:\n{mask_folder}"
     )
-    
-    
+
+
 @magic_factory(
-    call_button="Load ROI folder",
-    roi_folder={
-        "label": "ROI folder",
-        "mode": "d",
-    },
+    call_button="Visualize ROI folder",
+    image={"label": "Image stack layer"},
+    roi_folder={"label": "ROI folder", "mode": "d"},
 )
-def load_imagej_roi_widget(
+def visualize_roi_widget(
     image: Image,
-    roi_folder: Path,
+    roi_folder: Path = Path("."),
 ) -> list[LayerDataTuple]:
-    """Load one ImageJ ROI ZIP per image slice."""
+    """Overlay an ImageJ ROI folder on one selected image stack."""
 
-    number_images, spatial_shape = (
-        image_stack_shape(image.data)
-    )
+    if image is None:
+        show_info(
+            "Choose the image stack that corresponds to the ROI files."
+        )
+        return []
 
-    roi_stack, roi_paths = load_imagej_roi_folder(
-        roi_folder=roi_folder,
-        number_images=number_images,
-        image_shape=spatial_shape,
-    )
+    number_images, spatial_shape = image_stack_shape(image.data)
+
+    try:
+        roi_stack, roi_paths = load_imagej_roi_folder(
+            roi_folder=roi_folder,
+            number_images=number_images,
+            image_shape=spatial_shape,
+        )
+    except (ValueError, FileNotFoundError) as error:
+        show_info(str(error))
+        return []
 
     show_info(
-        f"Loaded {len(roi_paths)} ROI files."
+        f"Loaded {len(roi_paths)} ROI files for "
+        f"the selected layer '{image.name}'."
     )
 
     options = {
         "name": "reference_rois",
         "opacity": 0.45,
         "metadata": {
-            "roi_files": [
-                str(path)
-                for path in roi_paths
-            ],
+            "roi_files": [str(path) for path in roi_paths],
+            "source_image_layer": image.name,
         },
     }
 
     if roi_stack.ndim == 3:
-        options["axis_labels"] = (
-            "image",
-            "y",
-            "x",
-        )
+        options["axis_labels"] = ("image", "y", "x")
 
-    return [
-        (
-            roi_stack,
-            options,
-            "labels",
-        )
-    ] 
-    
+    return [(roi_stack, options, "labels")]
+
 
 @magic_factory(
-    call_button="Calculate Saved Segmentation IoU",
+    call_button="Calculate IoU",
+    roi_folder={"label": "ROI folder", "mode": "d"},
     segmentation_folder={
         "label": "Segmentation folder",
-        "mode": "d",
-    },
-    roi_folder={
-        "label": "ROI folder",
         "mode": "d",
     },
     output_csv={
@@ -213,239 +396,42 @@ def load_imagej_roi_widget(
         "filter": "CSV file (*.csv)",
     },
 )
-def segmentation_iou_widget(
-    segmentation_folder: Path,
-    roi_folder: Path,
-    output_csv: Path = Path(
-        "segmentation_iou.csv"
-    ),
+def calculate_iou_widget(
+    roi_folder: Path = Path("."),
+    segmentation_folder: Path = Path("."),
+    output_csv: Path = Path("segmentation_iou.csv"),
 ) -> None:
-    """Compare saved segmentations with ROI files."""
+    """Calculate IoU from saved files; no napari image layer is needed."""
 
-    table, saved_path = (
-        calculate_segmentation_folder_iou(
-            segmentation_folder=(
-                segmentation_folder
-            ),
+    try:
+        table, saved_path = calculate_segmentation_folder_iou(
+            segmentation_folder=segmentation_folder,
             roi_folder=roi_folder,
             output_csv=output_csv,
         )
-    )
+    except (ValueError, FileNotFoundError) as error:
+        show_info(str(error))
+        return
 
-    # Show individual values in the terminal.
-    print(
-        table[
-            ["image", "iou"]
-        ].to_string(index=False)
-    )
+    print(table[["image", "iou"]].to_string(index=False))
 
     show_info(
-        f"Mean IoU: "
-        f"{table['iou'].mean():.4f}\n"
+        f"Mean IoU: {table['iou'].mean():.4f}\n"
         f"Evaluated images: {len(table)}\n"
         f"CSV saved to:\n{saved_path}"
     )
 
-@magic_factory(
-    call_button="Save annotated mosaic",
-    output_path={
-        "label": "Project file",
-        "mode": "w",
-        "filter": "Annotation project (*.npz)",
-    },
-)
-def save_annotation_project_widget(
-    image: Image,
-    annotation: Labels,
-    output_path: Path = Path("organoid_annotations.npz"),
-) -> None:
-    """Save either a mosaic or a stack of annotated patches."""
 
-    image_data = np.asarray(image.data)
-    annotation_data = np.asarray(annotation.data)
+def roi_iou_widget() -> Container:
+    """One dock widget with independent ROI visualization and IoU tools."""
 
-    # Mosaic:
-    # image       = (Y, X, 3)
-    # annotations = (Y, X)
-    #
-    # Patch stack:
-    # image       = (N, Y, X, 3)
-    # annotations = (N, Y, X)
-    if image_data.shape[:-1] != annotation_data.shape:
-        raise ValueError(
-            "Image and annotation dimensions do not match. "
-            f"Image: {image_data.shape}; "
-            f"annotations: {annotation_data.shape}."
-        )
-
-    output_path = Path(output_path).with_suffix(".npz")
-    output_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
+    return Container(
+        widgets=[
+            visualize_roi_widget(),
+            calculate_iou_widget(),
+        ]
     )
 
-    np.savez_compressed(
-        output_path,
-        image=image_data,
-        annotations=annotation_data.astype(np.uint8),
-    )
-
-    show_info(
-        f"Annotation project saved to:\n{output_path}"
-    )
-
-
-@magic_factory(
-    call_button="Load annotation project",
-    input_path={
-        "label": "Project file",
-        "mode": "r",
-        "filter": "Annotation project (*.npz)",
-    },
-)
-def load_annotation_project_widget(
-    input_path: Path = Path("organoid_annotations.npz"),
-) -> list[LayerDataTuple]:
-    """Load either a mosaic or a stack of annotated patches."""
-
-    input_path = Path(input_path)
-
-    if not input_path.is_file():
-        raise FileNotFoundError(
-            f"Project not found: {input_path}"
-        )
-
-    with np.load(
-        input_path,
-        allow_pickle=False,
-    ) as project:
-        # New projects use "image".
-        # Old mosaic projects used "mosaic".
-        image_key = (
-            "image"
-            if "image" in project
-            else "mosaic"
-        )
-
-        image = project[image_key]
-        annotations = project["annotations"]
-
-    if image.shape[:-1] != annotations.shape:
-        raise ValueError(
-            "Saved image and annotation dimensions "
-            "do not match."
-        )
-
-    # Three-dimensional annotations mean:
-    # (patch, y, x)
-    if annotations.ndim == 3:
-        image_options = {
-            "name": "organoid_patches",
-            "rgb": True,
-            "axis_labels": (
-                "patch",
-                "y",
-                "x",
-            ),
-        }
-
-        label_options = {
-            "name": "patch_annotations",
-            "opacity": 0.45,
-            "axis_labels": (
-                "patch",
-                "y",
-                "x",
-            ),
-        }
-
-    # Two-dimensional annotations mean:
-    # (y, x), so this is a mosaic.
-    else:
-        image_options = {
-            "name": "organoid_mosaic",
-            "rgb": True,
-        }
-
-        label_options = {
-            "name": "organoid_annotations",
-            "opacity": 0.45,
-        }
-
-    return [
-        (
-            image,
-            image_options,
-            "image",
-        ),
-        (
-            annotations.astype(np.uint8),
-            label_options,
-            "labels",
-        ),
-    ]
-# def save_annotation_project_widget(
-#     mosaic: Image,
-#     annotation: Labels,
-#     output_path: Path = Path("organoid_annotations.npz"),
-# ) -> None:
-#     """Save the mosaic and edited annotations together."""
-
-#     mosaic_data = np.asarray(mosaic.data)
-#     annotation_data = np.asarray(annotation.data)
-
-#     if mosaic_data.shape[:2] != annotation_data.shape:
-#         raise ValueError(
-#             "Mosaic and annotation dimensions do not match."
-#         )
-
-#     output_path = Path(output_path).with_suffix(".npz")
-#     output_path.parent.mkdir(
-#         parents=True,
-#         exist_ok=True,
-#     )
-
-#     np.savez_compressed(
-#         output_path,
-#         mosaic=mosaic_data,
-#         annotations=annotation_data.astype(np.uint8),
-#     )
-
-#     show_info(
-#         f"Annotation project saved to:\n{output_path}"
-#     )
-    
-    
-# @magic_factory(
-#     call_button="Load annotated mosaic",
-#     input_path={
-#         "label": "Project file",
-#         "mode": "r",
-#         "filter": "Annotation project (*.npz)",
-#     },
-# )
-# def load_annotation_project_widget(
-#     input_path: Path = Path("organoid_annotations.npz"),
-# ) -> list[LayerDataTuple]:
-#     """Load a saved mosaic and annotation layer."""
-
-#     input_path = Path(input_path)
-
-#     if not input_path.is_file():
-#         raise FileNotFoundError(
-#             f"Project not found: {input_path}"
-#         )
-
-#     with np.load(input_path) as project:
-#         mosaic = project["mosaic"]
-#         annotations = project["annotations"]
-
-#     return [
-#         (mosaic, {"name": "organoid_mosaic", "rgb": True}, "image"),
-#         (annotations.astype(np.uint8), {"name": "organoid_annotations", "opacity": 0.45}, "labels"),
-#     ]
-
-    
 
 @magic_factory(
     call_button="Show credits",
@@ -459,5 +445,14 @@ def about_plugin_widget() -> None:
         "This plugin runs on Python; "
         "its student developer runs on coffee. ☕\n\n"
         "Optional coffee support:\n"
-        "IBAN: CH41 0079 0042 9430 0433 1\n"
+        "IBAN: CH41 0079 042 9430 0433 1\n"
     )
+
+
+# # Backward-compatible aliases for older command names.
+# organoid_mosaic_widget = organoid_workflow_widget
+# organoid_patch_stack_widget = organoid_workflow_widget
+# save_annotation_project_widget = annotation_project_widget
+# load_annotation_project_widget = annotation_project_widget
+# load_imagej_roi_widget = roi_iou_widget
+# segmentation_iou_widget = roi_iou_widget
