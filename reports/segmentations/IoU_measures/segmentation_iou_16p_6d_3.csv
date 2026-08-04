@@ -1,0 +1,4 @@
+image,iou,segmentation_file,roi_file
+6d-31-4x - 3,0.9101716709152022,C:\Users\sophi\napari-organoid-segmentation\reports\segmentations\organoid_measurements_16p_6d_3_segmentations\6d-31-4x - 3_labels.tif,C:\Users\sophi\semesterproject2\data\raw\Junho\6d_molde\4x\3\ROI\6d-31-4x - 3.zip
+6d-32-4x - 3,0.8653018412188986,C:\Users\sophi\napari-organoid-segmentation\reports\segmentations\organoid_measurements_16p_6d_3_segmentations\6d-32-4x - 3_labels.tif,C:\Users\sophi\semesterproject2\data\raw\Junho\6d_molde\4x\3\ROI\6d-32-4x - 3.zip
+6d-33-4x - 3,0.9193795498881857,C:\Users\sophi\napari-organoid-segmentation\reports\segmentations\organoid_measurements_16p_6d_3_segmentations\6d-33-4x - 3_labels.tif,C:\Users\sophi\semesterproject2\data\raw\Junho\6d_molde\4x\3\ROI\6d-33-4x - 3.zip

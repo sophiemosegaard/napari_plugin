@@ -43,6 +43,90 @@ def _prepare_image(image: np.ndarray) -> np.ndarray:
     # (Y, X, 3) -> (3, Y, X)
     return np.moveaxis(data, -1, 0)
 
+def _prepare_training_data(
+    image: np.ndarray,
+    annotations: np.ndarray,
+) -> tuple[
+    np.ndarray | list[np.ndarray],
+    np.ndarray | list[np.ndarray],
+]:
+    """Prepare either one mosaic or multiple independent patches."""
+
+    image_data = np.asarray(image)
+
+    annotation_data = np.asarray(
+        annotations,
+        dtype=np.uint16,
+    )
+
+    # Existing mosaic:
+    # image = (Y, X, 3)
+    # annotations = (Y, X)
+    if annotation_data.ndim == 2:
+        prepared_image = _prepare_image(image_data)
+
+        if annotation_data.shape != prepared_image.shape[1:]:
+            raise ValueError(
+                "Image and annotation shapes do not match. "
+                f"Image: {prepared_image.shape}; "
+                f"annotations: {annotation_data.shape}."
+            )
+
+        return prepared_image, annotation_data
+
+    # Individual patches:
+    # image = (N, Y, X, 3)
+    # annotations = (N, Y, X)
+    if annotation_data.ndim == 3:
+        if (
+            image_data.ndim == 4
+            and image_data.shape[-1] in (3, 4)
+        ):
+            image_shape = image_data.shape[:3]
+
+        # Also allow grayscale patch stacks: (N, Y, X)
+        elif image_data.ndim == 3:
+            image_shape = image_data.shape
+
+        else:
+            raise ValueError(
+                "Patch images must have shape "
+                "(N, Y, X) or (N, Y, X, 3)."
+            )
+
+        if image_shape != annotation_data.shape:
+            raise ValueError(
+                "Patch and annotation stack shapes do not match. "
+                f"Images: {image_data.shape}; "
+                f"annotations: {annotation_data.shape}."
+            )
+
+        # Use only patches containing at least one annotation.
+        indices = np.flatnonzero(
+            np.any(annotation_data > 0, axis=(1, 2))
+        )
+
+        if len(indices) == 0:
+            raise ValueError(
+                "No patch contains annotations."
+            )
+
+        prepared_images = [
+            _prepare_image(image_data[index])
+            for index in indices
+        ]
+
+        prepared_annotations = [
+            annotation_data[index]
+            for index in indices
+        ]
+
+        return prepared_images, prepared_annotations
+
+    raise ValueError(
+        "Annotations must have shape "
+        "(Y, X) or (N, Y, X)."
+    )
 
 def train_and_save_convpaint(
     image: np.ndarray,
@@ -50,23 +134,14 @@ def train_and_save_convpaint(
     model_folder: Path,
     model_name: str,
 ) -> Path:
-    """Train and save a ConvPaint model."""
+    """Train from one mosaic or multiple annotated patches."""
 
     global _CONVPAINT_MODEL
-
-    prepared_image = _prepare_image(image)
 
     annotation_data = np.asarray(
         annotations,
         dtype=np.uint16,
     )
-
-    if annotation_data.shape != prepared_image.shape[1:]:
-        raise ValueError(
-            "Image and annotation shapes do not match."
-            f"Image: {prepared_image.shape}; "
-            f"annotations: {annotation_data.shape}."
-        )
 
     classes = set(np.unique(annotation_data))
 
@@ -76,6 +151,13 @@ def train_and_save_convpaint(
             "and class 2 for organoids."
         )
 
+    prepared_images, prepared_annotations = (
+        _prepare_training_data(
+            image=image,
+            annotations=annotation_data,
+        )
+    )
+
     model = _model_class()("vgg")
 
     model.set_params(
@@ -84,21 +166,30 @@ def train_and_save_convpaint(
     )
 
     model.train(
-        prepared_image,
-        annotation_data,
+        prepared_images,
+        prepared_annotations,
     )
 
     model_folder = Path(model_folder)
-    model_folder.mkdir(parents=True, exist_ok=True)
+    model_folder.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     model_name = Path(model_name).stem.strip()
 
     if not model_name:
-        raise ValueError("Please enter a model name.")
+        raise ValueError(
+            "Please enter a model name."
+        )
 
     model_path = model_folder / model_name
 
-    model.save(str(model_path), create_pkl=True,create_yml=True)
+    model.save(
+        str(model_path),
+        create_pkl=True,
+        create_yml=True,
+    )
 
     _CONVPAINT_MODEL = model
 

@@ -42,8 +42,7 @@ def _read_rgb(path: Path) -> np.ndarray:
             f"Unsupported image shape: {image.shape}"
         )
 
-    # return img_as_float32(image)
-    return image.astype(np.float32, copy=False)
+    return img_as_float32(image)
 
 
 def _detection_image(image: np.ndarray, max_size: int) -> tuple[np.ndarray, float]:

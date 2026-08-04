@@ -13,6 +13,7 @@ dependencies = [
     "magicgui",
     "pandas",
     "napari-convpaint",
+    "roifile",
 ]
 
 [build-system]
